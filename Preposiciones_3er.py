@@ -6,6 +6,7 @@ from itertools import product
 
 # Lista para almacenar las reglas
 reglas = []
+mapa_proposiciones = {}  # Diccionario para mapear proposiciones a variables
 
 # Función para abrir la ventana de reglas
 def abrir_ventana_reglas():
@@ -31,6 +32,38 @@ def abrir_ventana_reglas():
     # Conectar la selección de una regla a su modificación
     lista_reglas.bind('<Double-1>', lambda event: modificar_o_borrar_regla(event, lista_reglas))
 
+# Función para abrir la ventana de átomos
+def abrir_ventana_atomos():
+    ventana_atomos = tk.Toplevel(ventana)
+    ventana_atomos.title("Gestión de Átomos")
+    ventana_atomos.geometry("400x300")
+    
+    # Listbox para mostrar átomos actuales
+    lista_atomos = tk.Listbox(ventana_atomos)
+    lista_atomos.pack(fill=tk.BOTH, expand=True)
+    
+    # Actualizar la lista al abrir la ventana
+    actualizar_lista_atomos(lista_atomos)
+    
+    # Botón para actualizar la lista de átomos manualmente
+    boton_actualizar = ttk.Button(ventana_atomos, text="Actualizar Lista", command=lambda: actualizar_lista_atomos(lista_atomos))
+    boton_actualizar.pack(side=tk.BOTTOM, padx=10, pady=10)
+
+# Función para actualizar la lista de reglas en el Listbox
+# Función para actualizar la lista de reglas en el Listbox
+def actualizar_lista_reglas(lista_reglas):
+    lista_reglas.delete(0, tk.END)
+    for index, regla in enumerate(reglas, start=1):  # Agrega un índice a cada regla, comenzando desde 1
+        regla_texto = f"Proposición {index}: {regla['regla']}"  # Muestra el número de proposición y la regla
+        lista_reglas.insert(tk.END, regla_texto)
+
+
+# Función para actualizar la lista de átomos en el Listbox
+def actualizar_lista_atomos(lista_atomos):
+    lista_atomos.delete(0, tk.END)
+    for proposicion, variable in mapa_proposiciones.items():
+        lista_atomos.insert(tk.END, f"{variable}: {proposicion}")
+
 # Función para guardar las reglas en un archivo JSON
 def guardar_reglas():
     archivo = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
@@ -49,13 +82,6 @@ def cargar_reglas(lista_reglas):
         actualizar_lista_reglas(lista_reglas)
         messagebox.showinfo("Cargar Reglas", "Reglas cargadas exitosamente.")
 
-# Función para actualizar la lista de reglas en el Listbox
-def actualizar_lista_reglas(lista_reglas):
-    lista_reglas.delete(0, tk.END)
-    for regla in reglas:
-        regla_texto = f"Regla: {regla['regla']} | \tÁtomos: {', '.join(regla['atomos'])}"
-        lista_reglas.insert(tk.END, regla_texto)
-
 # Función para identificar las proposiciones simples (átomos) en una regla
 def identificar_proposiciones_simples(proposicion):
     proposiciones_simples = re.split(r' y | o ', proposicion)
@@ -68,10 +94,31 @@ def procesar_proposicion():
     if isinstance(resultado, tuple):
         global operadores, proposiciones_simples
         operadores, proposiciones_simples = resultado
-        variables = [f'A{i+1}' for i in range(len(proposiciones_simples))]
+        
+        # Crear una lista para las variables
+        variables = []
+        
+        for prop in proposiciones_simples:
+            # Detectar negación si la proposición contiene "no"
+            es_negada = "no " in prop
+            prop_limpia = prop.replace("no ", "").strip()  # Elimina "no" para mapear correctamente
+            
+            # Si la proposición ya tiene una variable asignada, usarla
+            if prop_limpia in mapa_proposiciones:
+                variable = mapa_proposiciones[prop_limpia]
+            else:
+                # Crear una nueva variable
+                variable = f'A{len(mapa_proposiciones) + 1}'
+                mapa_proposiciones[prop_limpia] = variable
+            
+            # Agregar negación si corresponde
+            variables.append(f"¬{variable}" if es_negada else variable)
+        
+        # Construir la fórmula
         formula = "{}".format(variables[0])
         for i in range(1, len(proposiciones_simples)):
             formula = f"({formula} {operadores[i-1]} {variables[i]})"
+        
         detalle_proposiciones = "\n".join([f"{variables[i]}: {prop}" for i, prop in enumerate(proposiciones_simples)])
         
         # Guardar como nueva regla automáticamente
@@ -83,9 +130,12 @@ def procesar_proposicion():
     else:
         etiqueta_resultado.config(text="Proposición no válida")
 
+    print(formula)
+    return formula 
+
 # Función para identificar los operadores y separar en proposiciones simples
 def identificar_operadores(proposicion):
-    operadores = {' y ': 'and', ' o ': 'or'}
+    operadores = {' y ': '∧', ' o ': 'v'}
     proposiciones_simples = re.split(r' y | o ', proposicion)
     operadores_encontrados = [operadores[match.group()] for match in re.finditer(r' y | o ', proposicion)]
     if operadores_encontrados:
@@ -93,7 +143,7 @@ def identificar_operadores(proposicion):
     else:
         return "Operador no reconocido. Usa 'y' para AND y 'o' para OR."
 
-# Función para modificar o borrar una regla
+# (Continúa el # Función para modificar o borrar una regla
 def modificar_o_borrar_regla(event, lista_reglas):
     indice_seleccionado = lista_reglas.curselection()
     if indice_seleccionado:
@@ -114,9 +164,9 @@ def modificar_o_borrar_regla(event, lista_reglas):
             reglas.pop(indice)
             actualizar_lista_reglas(lista_reglas)
             messagebox.showinfo("Regla Borrada", "Regla eliminada exitosamente.")
-
 # Función para mostrar la tabla de verdad en una ventana
 def mostrar_tabla_verdad(operadores):
+    # Obtenemos las variables, asumiendo que `proposiciones_simples` está globalmente definido
     variables = [f'A{i+1}' for i in range(len(proposiciones_simples))]
     ventana_tabla = tk.Toplevel(ventana)
     ventana_tabla.title("Tabla de verdad")
@@ -125,24 +175,34 @@ def mostrar_tabla_verdad(operadores):
     texto = scrolledtext.ScrolledText(ventana_tabla, width=80, height=20, font=("Consolas", 12), bg="#333333", fg="#ffffff")
     texto.pack(padx=20, pady=20)
 
+    # Encabezado de la tabla
     header = "".join(f"{v:<5}" for v in variables[:len(proposiciones_simples)]) + "Resultado\n"
     texto.insert(tk.END, header, "header")
 
-    for valores in product([1, 0], repeat=len(proposiciones_simples)):
-        valores_dict = dict(zip(variables[:len(proposiciones_simples)], valores))
-        resultado = valores[0]
-        for i in range(1, len(valores)):
-            if operadores[i-1] == 'and':
-                resultado = resultado and valores[i]
-            elif operadores[i-1] == 'or':
-                resultado = resultado or valores[i]
-        texto.insert(tk.END, "".join([f"{val:<5}" for val in valores]) + f"{int(resultado)}\n", "row")
+    # Si solo hay una proposición, creamos la tabla básica para A1
+    if len(proposiciones_simples) == 1:
+        for valor in [1, 0]:
+            resultado = valor
+            texto.insert(tk.END, f"{valor:<5}{int(resultado)}\n", "row")
+    else:
+        # Si hay más de una proposición, procesamos con la lógica normal
+        for valores in product([1, 0], repeat=len(proposiciones_simples)):
+            valores_dict = dict(zip(variables[:len(proposiciones_simples)], valores))
+            resultado = valores[0]
+            for i in range(1, len(valores)):
+                if operadores[i-1] == '∧':
+                    resultado = resultado and valores[i]
+                elif operadores[i-1] == 'v':
+                    resultado = resultado or valores[i]
+            texto.insert(tk.END, "".join([f"{val:<5}" for val in valores]) + f"{int(resultado)}\n", "row")
 
     texto.tag_configure("header", font=("Consolas", 12, "bold"), background="#555555")
     texto.tag_configure("row", font=("Consolas", 12), background="#333333")
 
     # Vinculamos el evento de cierre de la ventana para que abra la ventana del árbol
     ventana_tabla.protocol("WM_DELETE_WINDOW", lambda: [ventana_tabla.destroy(), mostrar_arbol()])
+
+
 # Función para mostrar el diagrama de árbol
 def mostrar_arbol():
     # Crear la ventana principal
@@ -167,9 +227,9 @@ def mostrar_arbol():
     def evaluar_formula(valores):
         resultado = valores[0]
         for i in range(1, len(valores)):
-            if operadores[i - 1] == 'and':
+            if operadores[i - 1] == '∧':
                 resultado = resultado and valores[i]
-            elif operadores[i - 1] == 'or':
+            elif operadores[i - 1] == 'v':
                 resultado = resultado or valores[i]
         return resultado
 
@@ -206,7 +266,7 @@ def mostrar_arbol():
 
     # Ejecutar el bucle principal de la ventana
     ventana_arbol.mainloop()
-
+    
 # Ventana principal
 ventana = tk.Tk()
 ventana.title("Lógica Proposicional")
@@ -229,8 +289,9 @@ boton_cerrar.pack_forget()
 boton_reglas = ttk.Button(ventana, text="Reglas", command=abrir_ventana_reglas, style="TButton")
 boton_reglas.pack(pady=10)
 
-# Estilo de botones
-style = ttk.Style()
-style.configure("TButton", font=("Helvetica", 12), padding=10, background="#007ACC", foreground="#1e1e1e")
+# Botón para abrir la ventana de gestión de átomos
+boton_atomos = ttk.Button(ventana, text="Átomos", command=abrir_ventana_atomos, style="TButton")
+boton_atomos.pack(pady=10)
 
 ventana.mainloop()
+
